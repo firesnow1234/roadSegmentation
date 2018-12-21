@@ -480,6 +480,7 @@ int main()
         }
     }
     //绘制点集中所有点
+
     Mat img(64, 520, CV_8UC3, Scalar(255, 255, 255));
     for (unsigned int i = 0; i < ptSet.size(); i++){
         circle(img, ptSet[i], 0.5, Scalar(255, 0, 0), 3, 8);
@@ -504,6 +505,7 @@ int main()
     imshow("line fitting", img);
     imwrite("/home/jinxiao/Pictures/ransac2.png", img);
     waitKey();
+
 
 
     // 路面分割的超参数
@@ -534,6 +536,82 @@ int main()
             }
         }
     }
+
+
+    //显示分割结果
+    Mat colorImg(64, 520, CV_8UC3, Scalar(255, 255, 255));
+
+    for(int i = 0; i < colorImg.rows; i++){
+        for(int j = 0; j < colorImg.cols; j++){
+            Vec3b pixel;
+            if(roadSegment(i,j) == 3){
+                pixel[0] = 255;
+                pixel[1] = 0;
+                pixel[2] = 255;
+            }
+            else{
+                pixel[0] = 255;
+                pixel[1] = 0;
+                pixel[2] = 0;
+            }
+            colorImg.at<Vec3b>(i,j) = pixel;
+        }
+    }
+
+
+    imwrite("/home/jinxiao/Pictures/colorImg.png", colorImg);
+    Mat meanFilImg;
+    medianBlur(colorImg,meanFilImg,3);
+    imshow("road segmentation", meanFilImg);
+    imwrite("/home/jinxiao/Pictures/medianFilter.png", meanFilImg);
+    waitKey(0);
+
+
+
+    // 计算属于道路的概率 roadProp
+    const int minDist = 0;
+    const int maxDist = 16;
+    MatrixXd roadProp = MatrixXd::Zero(64, 520);
+
+    for(int i = 0; i < 64; i++){
+        for(int j = 0; j < 520; j++){
+            int light =  (int) (frontImage(i,j)*1000);
+            if(light == 0) continue;
+            double dist = abs(m*light - i + b)/pow(((-1)*(-1) + m*m),0.5);
+            if(dist > maxDist){
+                roadProp(i,j) = 0;
+                continue;
+            }
+            roadProp(i,j) = 1 - (dist / (maxDist - minDist));
+        }
+    }
+
+    for(int i = 0; i < 64; i++){
+        cout << "line " << i << " : ";
+        for(int j = 0; j< 520; j++){
+            cout << roadProp(i,j) << " ";
+        }
+        cout << endl;
+    }
+
+
+
+
+    // 提取法线方向
+    Vector3d upVec;
+    upVec << 0, 0 ,1;
+
+    cout << "upVec: " << upVec << endl;
+
+    MatrixXd normalVectorProp = MatrixXd::Zero(64, 520);
+    /*
+
+    for(int i = 0; i < 64; i++){
+        for(int j = 0; j < 520; j++){
+
+        }
+    }*/
+
 
 
 
