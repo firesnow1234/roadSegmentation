@@ -2,6 +2,7 @@
 #include <vector>
 #include <math.h>
 #include <Eigen/Eigen>
+#include <Eigen/Dense>
 #include <pcl/ModelCoefficients.h>
 #include <pcl/sample_consensus/method_types.h>
 #include <pcl/sample_consensus/model_types.h>
@@ -137,6 +138,7 @@ bool verifyComposition(const vector<Point2d> pts)
     return true;
 }
 
+
 //RANSAC直线拟合
 void fitLineRANSAC(vector<Point2d> ptSet, double &a, double &b, double &c, vector<bool> &inlierFlag)
 {
@@ -229,6 +231,78 @@ void fitLineRANSAC(vector<Point2d> ptSet, double &a, double &b, double &c, vecto
 }
 
 
+void readCalibration(string filename, vector<double> &P0, vector<double> &velo2cam){
+    string num[8][13];
+    ifstream file(filename);
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 13; j++) {
+            if(i == 4 && j >= 10){
+                continue;
+            }
+            file >> num[i][j];
+        }
+    }
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 13; j++) {
+            cout << num[i][j] << " ";
+        }
+        cout << endl;
+    }
+    for(int i = 1; i < 13; i++){
+        double p0 =  (double) atof(num[0][i].c_str());
+        P0.push_back(p0);
+        double v1 = (double) atof(num[5][i].c_str());
+        velo2cam.push_back(v1);
+    }
+    cout << "P0: " ;
+    for(int i = 0; i < 12; i++){
+        cout << P0[i] << " ";
+    }
+    cout << endl << "velo2cam: ";
+    for(int i = 0; i < 12; i++){
+        cout << velo2cam[i] << " ";
+    }
+    file.close();
+}
+
+
+
+void readPositioinPrior(string posiName, MatrixXd &posiMat){
+    ifstream file(posiName);
+    for (int i = 0; i < 64; i++) {
+        for (int j = 0; j < 520; j++) {
+            file >> posiMat(i,j);
+        }
+    }
+    for (int i = 0; i < 64; i++) {
+        for (int j = 0; j < 520; j++) {
+
+            cout << posiMat(i,j) << " ";
+        }
+        cout << endl;
+    }
+    file.close();
+}
+
+
+
+Mat gray2pseudocolor(const Mat& scaledGray)
+{
+    Mat outputPseudocolor(scaledGray.size(), CV_8UC3);
+    unsigned char grayValue;
+    for (int y = 0; y < scaledGray.rows; y++)
+        for (int x = 0; x < scaledGray.cols; x++)
+        {
+            grayValue = scaledGray.at<uchar>(y, x);
+            Vec3b& pixel = outputPseudocolor.at<Vec3b>(y, x);
+            pixel[0] = abs(255 - grayValue);
+            pixel[1] = abs(127 - grayValue);
+            pixel[2] = abs(0 - grayValue);
+        }
+
+    return outputPseudocolor;
+}
+
 int main()
 {
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
@@ -261,13 +335,11 @@ int main()
     MatrixXd lidar_image_z = MatrixXd::Zero(lidarNums, everylidarCount);
     MatrixXd lidar_image_cor = MatrixXd::Zero(lidarNums, everylidarCount);
 
+    // lidar_all
     std::vector<std::vector<std::vector<double> > > lidar_image_all(64,vector<vector<double> >(2190,vector<double>(4,0)));
-
-    cout << " the size of lidar_image_all: "       <<  lidar_image_all.size()       << endl;
-    cout << " the size of lidar_image_all[0]: "    <<  lidar_image_all[0].size()    << endl;
-    cout << " the size of lidar_image_all[0][0]: " <<  lidar_image_all[0][0].size() << endl;
-    cout << " lidar_image_all[0][0][0]: "          <<  lidar_image_all[0][0][0]     << endl;
-    cout << " lidar_image_all[63][2189][3]: "      <<  lidar_image_all[63][2189][3] << endl;
+    MatrixXd lidar_all_x = MatrixXd::Zero(64, 2190);
+    MatrixXd lidar_all_y = MatrixXd::Zero(64, 2190);
+    MatrixXd lidar_all_z = MatrixXd::Zero(64, 2190);
 
     // angle_v, angle_h, dangle_h, index = compute_hori_angle(s)
     vector<double> angle_v,  angle_h;
@@ -307,12 +379,16 @@ int main()
                 lastHold = ind_cur_point;
 
                 lidar_image_cor(i, ind_cur_point) = j;
+
                 /*
                 lidar_image_all[i][ind_cur_point][0] = matrix_lidar(j,0);
                 lidar_image_all[i][ind_cur_point][1] = matrix_lidar(j,1);
                 lidar_image_all[i][ind_cur_point][2] = matrix_lidar(j,2);
                 lidar_image_all[i][ind_cur_point][3] = matrix_lidar(j,3);
                  */
+                lidar_all_x(i, ind_cur_point) = matrix_lidar(j,0);
+                lidar_all_y(i, ind_cur_point) = matrix_lidar(j,1);
+                lidar_all_z(i, ind_cur_point) = matrix_lidar(j,2);
             }
             else{
                 lidar_image(i, j - indAnglePoint + lastHold)   = dis;
@@ -327,7 +403,9 @@ int main()
                 lidar_image_all[i][j - indAnglePoint + lastHold][2] = matrix_lidar(j,2);
                 lidar_image_all[i][j - indAnglePoint + lastHold][3] = matrix_lidar(j,3);
                  */
-
+                lidar_all_x(i, j - indAnglePoint + lastHold) = matrix_lidar(j,0);  //test ok
+                lidar_all_y(i, j - indAnglePoint + lastHold) = matrix_lidar(j,1);  //
+                lidar_all_z(i, j - indAnglePoint + lastHold) = matrix_lidar(j,2);  //test ok
             }
             lastAngle = angle_h[j];
         }
@@ -337,7 +415,16 @@ int main()
         cout << "lidar_image_cor:[i][j] " << j << ":     "<< lidar_image_cor(j,j) << endl;
     }
     for(int j = 0; j < 64; j++){
-        cout << "lidar_image_x:[0][j] " << j << ":     "<< lidar_image_x(0,j) << endl;
+        cout << "lidar_image_y:[0][j] " << j << ":     "<< lidar_image_y(0,j) << endl;
+    }
+
+    // test lidar all [0][2] =  42.918 ? 缺失
+    for(int i = 0; i < 64; i++){
+        cout << "lidar_all_y: " << i << " : ";
+        for(int j = 0; j < 2190; j++){
+            cout << lidar_all_y(i,j) << " ";
+        }
+        cout << endl;
     }
 
 
@@ -411,7 +498,7 @@ int main()
     MatrixXd lidar_image_cor3 = MatrixXd::Zero(64, 520);
     for(int i = 0; i < 520; i++){
         frontImage.col(i) = sss.col(260 + i);
-        lidar_image_cor3.col(i) = sss.col(260 + i);
+        lidar_image_cor3.col(i) = lidar_image_cor2.col(260 + i);
     }
     // test frontImage 数值不同
     for(int j = 0; j < 50; j++){
@@ -422,6 +509,52 @@ int main()
     }
 
     // 完全获取激光xyzr数据
+    MatrixXd lidar_xyzr_x = MatrixXd::Zero(64, 1040);
+    MatrixXd lidar_xyzr_y = MatrixXd::Zero(64, 1040);
+    MatrixXd lidar_xyzr_z = MatrixXd::Zero(64, 1040);
+    for(int i = 0; i < 64; i++){
+        for(int j = 0; j < 1040; j++){
+            if(j < 520){
+                lidar_xyzr_x(i,j) = lidar_all_x(i, j+1561);
+                lidar_xyzr_y(i,j) = lidar_all_y(i, j+1561);
+                lidar_xyzr_z(i,j) = lidar_all_z(i, j+1561);
+            }
+            else{
+                lidar_xyzr_x(i,j) = lidar_all_x(i, j-520);
+                lidar_xyzr_y(i,j) = lidar_all_y(i, j-520);
+                lidar_xyzr_z(i,j) = lidar_all_z(i, j-520);
+            }
+        }
+    }
+
+    cout << "lidar_xyz_y" << " " << endl << lidar_xyzr_y << endl; //test ok
+    // lidar_temp
+    MatrixXd lidar_temp_x = MatrixXd::Zero(64, 1040);
+    MatrixXd lidar_temp_y = MatrixXd::Zero(64, 1040);
+    MatrixXd lidar_temp_z = MatrixXd::Zero(64, 1040);
+    for(int i = 0; i < 64; i++){
+        for(int j = 0; j < 1040; j++){
+            lidar_temp_x(i,j) = lidar_xyzr_x(i, 1040-j-1);
+            lidar_temp_y(i,j) = lidar_xyzr_y(i, 1040-j-1);
+            lidar_temp_z(i,j) = lidar_xyzr_z(i, 1040-j-1);
+        }
+    }
+    //cout << "lidar_temp: " << endl;
+   // cout << lidar_temp_y<< endl;    // test ok
+    //frontLidar
+    MatrixXd frontLidar_x = MatrixXd::Zero(64, 520);
+    MatrixXd frontLidar_y = MatrixXd::Zero(64, 520);
+    MatrixXd frontLidar_z = MatrixXd::Zero(64, 520);
+    for(int i = 0; i < 64; i++){
+        for(int j = 0; j < 520; j++){
+            frontLidar_x(i,j) = lidar_temp_x(i,j+260);
+            frontLidar_y(i,j) = lidar_temp_y(i,j+260);
+            frontLidar_z(i,j) = lidar_temp_z(i,j+260);
+        }
+    }
+
+    cout << "frontLidar: "  << endl;
+    cout << frontLidar_y << endl;
 
 
     // 直方图
@@ -595,25 +728,219 @@ int main()
     }
 
 
+    Mat imgRoad(64 ,520, CV_8UC1);
+    uchar *ptmp = NULL;
+    for (int i = 0; i < 64; ++i)
+    {
+        ptmp = imgRoad.ptr<uchar>(i);
+
+        for (int j = 0; j < 520; ++j)
+        {
+            ptmp[j] = roadProp(i, j) * 255;
+        }
+    }
+    imshow("gray.jpg", imgRoad);
+    imwrite("gray.jpg", imgRoad);
+    waitKey(0);
+
+    Mat pseudoImg = gray2pseudocolor(imgRoad);
+    imshow("jet.jpg", pseudoImg);
+    imwrite("jet.jpg", pseudoImg);
+    waitKey(0);
+
 
 
     // 提取法线方向
-    Vector3d upVec;
-    upVec << 0, 0 ,1;
+    Vector3d upVec(0,0,1);
 
     cout << "upVec: " << upVec << endl;
 
+    Vector3d norVec;
+
     MatrixXd normalVectorProp = MatrixXd::Zero(64, 520);
-    /*
+    MatrixXd block_x(4,4);
+    MatrixXd block_y(4,4);
+    MatrixXd block_z(4,4);
+    MatrixXd newBox = MatrixXd::Zero(16,3);
 
-    for(int i = 0; i < 64; i++){
-        for(int j = 0; j < 520; j++){
 
+    for(int i = 0; i < 64; i += 4){
+        for(int j = 0; j < 520; j += 4){
+            block_x = frontLidar_x.block(i,j,4,4);
+            block_y = frontLidar_y.block(i,j,4,4);
+            block_z = frontLidar_z.block(i,j,4,4);
+            //cout << "i j"<< i << j << " : " << block_y <<endl;
+
+            block_x.resize(16,1);
+            block_y.resize(16,1);
+            block_z.resize(16,1);
+
+
+
+            for(int k = 0; k < 16; k++){
+                newBox(k,0) = block_x(k);
+                newBox(k,1) = block_y(k);
+                newBox(k,2) = block_z(k);
+            }
+            //cout << "newBox: " << endl <<  newBox << endl;
+
+            // 求协方差
+            Eigen::MatrixXd meanVec = newBox.colwise().mean();
+            Eigen::RowVectorXd meanVecRow(Eigen::RowVectorXd::Map(meanVec.data(),newBox.cols()));
+
+            Eigen::MatrixXd zeroMeanMat = newBox;
+            zeroMeanMat.rowwise()-=meanVecRow;
+            Eigen::MatrixXd covMat;
+
+            covMat = (zeroMeanMat.adjoint()*zeroMeanMat)/double(newBox.rows()-1);
+            //cout << "covMat :" << endl << covMat << endl;
+
+
+
+            // 最小特征值及其对应的特征向量
+            EigenSolver<Matrix3d> es(covMat);
+            MatrixXd D = es.pseudoEigenvalueMatrix();
+            MatrixXd V = es.pseudoEigenvectors();
+            //cout << V <<endl;
+            //cout << D <<endl;
+
+            double min_eigen_value = 65535.0;
+            int ind_minEig = 0;
+            for(int k = 2; k > 0;k--){
+                if(D(k,k) < min_eigen_value){
+                    min_eigen_value = D(k,k);
+                    ind_minEig = k;
+                }
+
+            }
+
+            norVec = V.col(ind_minEig);
+
+            //cout << "vec: " << endl << norVec << endl;
+
+            //求向量之间夹角
+            double Lx = norVec.dot(norVec);
+            double Ly = upVec.dot(upVec);
+            double cos_angle = norVec.dot(upVec) / (Lx*Ly);
+            double angle = acos(cos_angle);
+            double angle2 = angle * 180 / Pi;
+
+            cout << "Lx: "<< Lx << endl;
+            cout << "Ly: "<< Ly << endl;
+            cout << "cos_angle: " << cos_angle << endl;
+            cout << "angle: " << angle << endl;
+            cout << "angle2: " << angle2 << endl;
         }
-    }*/
+    }
 
 
 
+    //求均值
+
+
+
+    //位置先验知识
+    MatrixXd posiMat = MatrixXd::Zero(64, 520);
+    string posiName  = "positionPrior.txt";
+    readPositioinPrior(posiName, posiMat);
+
+
+    //概率融合
+
+
+
+    //投影到图像中
+    //read callibration
+    string filename = "um_000000.txt";
+    vector<double> P;
+    vector<double> velo2cam;
+    readCalibration(filename, P, velo2cam);
+    MatrixXd P0 = MatrixXd::Zero(4,4);
+    MatrixXd Tr = MatrixXd::Zero(4,4);
+    for(int i = 0 ; i < P.size(); i++){
+        if(i < 4){
+            P0(0,i)= P[i];
+            Tr(0,i) = velo2cam[i];
+        }
+        else if(i < 8){
+            P0(1,i%4) = P[i];
+            Tr(1,i%4) = velo2cam[i];
+        }
+        else{
+            P0(2,i%4) = P[i];
+            Tr(2,i%4) = velo2cam[i];
+        }
+    }
+    P0(3,3) = 1;
+    Tr(3,3) = 1;
+
+    //cout<<endl<< "P0: " << P0 << endl;
+    //cout << "Tr: " << Tr <<endl;
+
+    //read Img
+    string imageName;
+    imageName = "um_000000.png";
+    Mat imgCamera = imread(imageName,1);
+
+    //cout << "imgCamera.rows" << imgCamera.rows << "imgCamera.cols" << imgCamera.cols << endl;
+
+    // 投影
+    MatrixXd cPointCloud = MatrixXd::Zero(matrix_lidar.rows(), matrix_lidar.cols());
+    int countOutPoint = 0;
+    MatrixXd point(4,1);
+    MatrixXd  newPoint(4,1);
+    MatrixXd tmp(4,1);
+    vector <int> rowIndex, colIndex;
+    vector <double> propIndex;
+    //cout<< "lidar_image_cor3.rows(): "  << lidar_image_cor3.rows() <<endl;
+    //cout <<"lidar_image_cor3.cols(): " << lidar_image_cor3.cols() <<endl;
+
+   // cout << lidar_image_cor3 << endl;
+
+    for(int idx = 0; idx < lidar_image_cor3.rows(); idx++){
+        for(int jdx = 0; jdx < lidar_image_cor3.cols(); jdx++){
+            for(int k = 0; k < 3; k++){
+                point(k)= matrix_lidar((int) lidar_image_cor3(idx, jdx), k);
+            }
+            //cout << point << endl;
+            point(3,0) = 1;
+            //cout <<"point: " << point <<endl;
+            tmp = Tr*point;
+            newPoint =  P0*(Tr*point);
+            if(tmp(2,0) < 0){
+                continue;
+            }
+            newPoint = newPoint/newPoint(2,0);
+
+            if(newPoint(1,0) > 0 && (newPoint(1,0) < imgCamera.rows-1) && newPoint(0,0)>0 && (newPoint(0,0)<imgCamera.cols-1) ){
+                rowIndex.push_back((int)newPoint(0,0));
+                colIndex.push_back((int)newPoint(1,0));
+                propIndex.push_back((roadProp(idx, jdx) + posiMat(idx, jdx))/2);
+
+            }
+        }
+    }
+   // cout <<"newPoint: " << point << endl << point.transpose() <<endl << Tr*point << endl << P0*(Tr*point);
+    //cout << "newPoint:  " <<  newPoint<<endl;
+   // cout << " rowIndex.size()" << rowIndex.size() << endl;
+   // for(int k = 0; k < rowIndex.size(); k++){
+       // cout << rowIndex[k] << " ";
+   // }
+
+    cv::Point cvPoint;//特征点，用以画在图像中
+    for(int i = 0; i < rowIndex.size(); i++){
+        cvPoint.x = rowIndex[i];//特征点在图像中横坐标
+        cvPoint.y = colIndex[i];//特征点在图像中纵坐标
+        double color0 = abs(255 - 255*propIndex[i]);
+        double color1 = abs(127 - 255*propIndex[i]);
+        double color2 = abs(0 - 255*propIndex[i]);
+        cv::circle(imgCamera, cvPoint, 1, cv::Scalar(color0,color1,color2), -1);  //在图像中画出特征点，2是圆的半径 cv::Scalar(255*propIndex[i],0,0)
+    }
+
+
+    imshow("image", imgCamera);
+    waitKey(0);
+    imwrite("calibration.png", imgCamera);
 
     return 0;
 }
