@@ -75,6 +75,24 @@ def lidar2img(lidar_index_cor2, velo_img, camera, finalProp, pro_lidar):
 ### 计算均值
 #in: 前方激光雷达数据frontLidar
 ''' 
+'''
+    '''
+    xyzList = []
+    for i in range(frontLidar.shape[0]):
+        for j in range(frontLidar.shape[1]):
+            if roadProp[i][j] > 0.9:
+                xyzList.append(frontLidar[i,j,:])
+    xyzArray = np.array(xyzList)   
+    mat_path = 'my_mat_save_path'
+    s[np.where(np.isnan(s))]= 0 
+    io.savemat(mat_path, {'name': s[:,:3]})
+    
+    eng = matlab.engine.start_matlab()
+    result = eng.ransac1212(500)
+    Pa,Pb,Pc,Pd = result[0][0], result[0][1], result[0][2], result[0][3]  # ax + by + d = z
+    roadPlane = np.array((Pa,Pb,Pc,Pd))
+    '''
+'''
 def mean_compute_prop(frontLidar):
     meanZProp = np.zeros([len(frontLidar), len(frontLidar[0])])
     zList = []
